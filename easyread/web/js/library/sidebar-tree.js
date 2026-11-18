@@ -15,21 +15,23 @@
   const lvl = (d) => ' style="--lvl:' + d + '"';
   const more = '<span class="more" data-more title="' + PR.t("更多") + '">' + PR.icon("more", "sm") + "</span>";
 
-  function leafRow(i, d) {
+  function leafRow(i, d, folder) {
     const t = PR.titles(i);
-    return '<div class="srow tree leaf' + (L.selected === i.id ? " sel" : "") + '" data-leaf="' + i.id + '" draggable="true"' + lvl(d) + ' title="' + PR.esc(t.main) + '">' + PR.foldSlot(false) + PR.icon("page", "sm") +
+    return '<div class="srow tree leaf' + (L.selected === i.id ? " sel" : "") + '" data-leaf="' + i.id + '" draggable="true"' + (folder ? ' data-leaf-folder="' + PR.esc(folder) + '"' : "") + lvl(d) + ' title="' + PR.esc(t.main) + '">' + PR.foldSlot(false) + PR.icon("page", "sm") +
       '<span class="t">' + PR.esc(t.short) + "</span>" + more + "</div>";
   }
-  const moreRow = (c, n, d) => '<div class="srow tree show-all" data-all-in="' + PR.esc(c) + '"' + lvl(d) + ">" + PR.foldSlot(false) + '<span class="t">' + PR.t("还有 {n} 篇", { n }) + "</span></div>";
+  const moreRow = (key, n, d) => '<div class="srow tree show-all" data-all-in="' + PR.esc(key) + '"' + lvl(d) + ">" + PR.foldSlot(false) + '<span class="t">' + PR.t("还有 {n} 篇", { n }) + "</span></div>";
 
   /* o.catRow(c, kids, open)、o.addRow(depth)：sidebar.js 给；o.skip(c)：隐藏、置顶的分类不画；o.addUnder：正在它下面新建子分类，先展开 */
   PR.sideTreeHtml = function (cats, o) {
     const byTitle = (a, b) => PR.titles(a).short.localeCompare(PR.titles(b).short, PR.lang);
-    const items = L.items.filter((i) => (i.tags || []).length).sort(byTitle);
-    const rows = T.rows(cats, items, { open: (c) => L.isOpen(c) || o.addUnder === c, skip: o.skip, limit: LIMIT, full: (c) => full.has(c) });
+    const tags = o.tags || ((i) => i.tags || []);
+    const items = L.items.filter((i) => tags(i).length).sort(byTitle);
+    const key = (c) => o.tags ? "/" + c : c;
+    const rows = T.rows(cats, items, { tags: o.tags, open: (c) => L.isOpen(key(c)) || o.addUnder === c, skip: o.skip, limit: LIMIT, full: (c) => full.has(key(c)) });
     return rows.map((r) => {
-      if (r.type === "paper") return leafRow(r.item, r.depth);
-      if (r.type === "more") return moreRow(r.cat, r.n, r.depth);
+      if (r.type === "paper") return leafRow(r.item, r.depth, o.tags ? r.cat : null);
+      if (r.type === "more") return moreRow(key(r.cat), r.n, r.depth);
       return o.catRow(r.c, r.kids, r.open) + (o.addUnder === r.c ? o.addRow(r.depth + 1) : "");
     }).join("");
   };
@@ -45,7 +47,7 @@
     if (!leaf) return;
     const id = leaf.dataset.leaf;
     L.select(id);
-    if (e.target.closest("[data-more]")) PR.rowMenu(id, e.target.closest("[data-more]"));
+    if (e.target.closest("[data-more]")) PR.rowMenu(id, e.target.closest("[data-more]"), leaf.dataset.leafFolder);
   });
   side.addEventListener("dblclick", (e) => {
     const leaf = e.target.closest(".srow[data-leaf]");
@@ -56,6 +58,6 @@
     if (!leaf) return;
     e.preventDefault();
     L.select(leaf.dataset.leaf);
-    PR.rowMenu(leaf.dataset.leaf, { x: e.clientX, y: e.clientY });
+    PR.rowMenu(leaf.dataset.leaf, { x: e.clientX, y: e.clientY }, leaf.dataset.leafFolder);
   });
 })(window.PR);

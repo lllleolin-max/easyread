@@ -7,8 +7,8 @@ function canUpdate(platform, env) {
   return platform === "win32" || platform === "darwin" || (platform === "linux" && !!env.APPIMAGE);
 }
 
-function registerUpdates({ app, ipcMain, updater, trustedWindow, getWindow, prepareInstall, recover, platform = process.platform, env = process.env }) {
-  const supported = app.isPackaged && canUpdate(platform, env);
+function registerUpdates({ app, ipcMain, updater, trustedWindow, getWindow, prepareInstall, recover, enabled = true, platform = process.platform, env = process.env }) {
+  const supported = enabled && app.isPackaged && canUpdate(platform, env);
   let state = { supported, phase: "idle", version: "", percent: 0, error: "" };
   let busy = false;
   const publish = (patch) => {

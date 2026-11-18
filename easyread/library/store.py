@@ -4,7 +4,7 @@
   paper.json       翻译方（对话里的 agent 或后台翻译任务）写：原文、译文、术语、参考文献
   discussion.json  翻译方写：解释、问答、回复、原文核对提示
   reader.json      只由页面经 /api/.../ops 写：用户改的译文、笔记、划线、论文笔记、进度
-  item.json        只由页面经 /api/items 写：标签、阅读状态、星标、打开时间
+  item.json        文献库管理的分类、论文标签、阅读状态、星标和打开时间
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .fs_retry import retry_write
 from .glossary import valid_entries
+from .linked_pdf import original_pdf
 
 SCHEMA = 2
 
@@ -204,22 +205,10 @@ class Workspace:
     @property
     def source_pdf(self) -> Path:
         """Original PDF only: generated files remain inside this workspace."""
-        meta = (self.load("paper") or {}).get("meta", {})
-        linked = meta.get("source_pdf_path")
-        if not linked:
-            return self.root / "source.pdf"
-        path = Path(linked)
-        if not path.is_absolute() or not path.is_file():
-            from ..app.i18n import tr
-            raise ValueError(tr("链接的 PDF 不存在或不可读：{path}；请恢复原文件到此位置", path=str(path)))
-        try:
-            with path.open("rb") as stream:
-                if not stream.read(4).startswith(b"%PDF"):
-                    raise ValueError
-        except (OSError, ValueError):
-            from ..app.i18n import tr
-            raise ValueError(tr("链接的 PDF 不存在或不可读：{path}；请恢复原文件到此位置", path=str(path))) from None
-        return path
+        return original_pdf(self)
+
+    def read_source_pdf(self) -> bytes:
+        return original_pdf(self, read=True)
 
     def load(self, name: str):
         defaults = {"reader": empty_reader(), "discussion": empty_discussion(), "layout": {}, "item": {}, "job": {}, "chat": {"messages": []}}

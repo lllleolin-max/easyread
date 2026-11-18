@@ -55,10 +55,13 @@ Send this JSON to `POST /api/migrate/start` with the normal `X-Token` header.
 network fetching cannot be combined with it. Entries without a local PDF are
 skipped, and per-file errors are recorded in the bulk result.
 
-Keep original PDFs at their recorded paths. A missing or unreadable linked PDF
-reports its path and asks for the original file to be restored there. Generated
-pages, extracts and figures remain inside EasyRead. Trash, restore, purge and
-cloud-library cleanup operate on EasyRead's files only. Cloud-library copy and
-merge preserve the external-path metadata without following or materializing
-the original PDF; another computer must have access to the same path. This is
-a local reference, not a portable bundle or an automatic relinking system.
+EasyRead checks linked originals against their saved SHA-256. If the recorded
+file disappears or its contents change, the reader can use an identical copy
+already indexed in a mapped folder. Folder sync updates the link when it finds
+a verified replacement for a mapped original. If no matching copy is available,
+the reader shows the recorded path so you can restore the file.
+
+Generated pages, extracts and figures stay inside EasyRead. Trash, restore,
+purge and cloud-library cleanup operate on EasyRead's own files. Cloud-library
+copy and merge preserve the external reference. Reading the original on another
+computer requires access to the original or to an indexed copy with the same contents.

@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from easyread.library import cloudlib, cloudlib_detect
+from easyread.library import cloudlib, cloudlib_detect, paper_labels
 from easyread.app import config
 from easyread.library.cloudlib_lock import LibraryMarker
 from easyread.library.library import Library
@@ -91,6 +91,8 @@ print(json.dumps({"errors": errors, "times": times, "status": location.status, "
         for pid in ("paper001", "paper002", "paper003"):
             paper(self.src, pid)
         paper(self.src / ".trash", "deleted01")
+        paper_labels.create(self.src, "Reusable tag")
+        paper_labels.edit(self.src, Library(self.src).ws("paper001"), {"add": ["Applied tag"]})
         result = self.migrate()
         self.assertEqual(result["copied"], 3)
         self.assertEqual(config.load()["library_dir"], str(self.dst))
@@ -110,6 +112,61 @@ print(json.dumps({"errors": errors, "times": times, "status": location.status, "
         self.assertEqual(self.location.status, "idle")
         self.assertEqual((self.dst / "keep.txt").read_text(), "original")
         self.assertFalse(list(self.dst.glob(".easyread-copy-*")))
+
+    def test_copy_preserves_folder_sync_configuration_without_counting_it_as_a_paper(self):
+        paper(self.src, "paper001")
+        mappings = {"": {"path": str(self.root / "Downloads"), "enabled": True, "files": {}, "folders": [""]}}
+        write_json_atomic(self.src / ".folder-sync.json", mappings)
+        before = (self.src / ".folder-sync.json").read_bytes()
+        result = self.migrate()
+        self.assertEqual(result["copied"], 1)
+        self.assertEqual((self.dst / ".folder-sync.json").read_bytes(), before)
+        self.assertEqual((self.src / ".folder-sync.json").read_bytes(), before)
+
+    def test_copy_does_not_overwrite_an_existing_folder_sync_configuration(self):
+        paper(self.src, "paper001")
+        self.dst.mkdir()
+        write_json_atomic(self.src / ".folder-sync.json", {"A": {}})
+        write_json_atomic(self.dst / ".folder-sync.json", {"B": {}})
+        before = (self.dst / ".folder-sync.json").read_bytes()
+        with self.assertRaisesRegex(ValueError, "不会覆盖"):
+            self.migrate()
+        self.assertEqual((self.dst / ".folder-sync.json").read_bytes(), before)
+        self.assertEqual(config.load()["library_dir"], str(self.src))
+        self.assertFalse((self.dst / "paper001").exists())
+
+    def test_copy_rejects_a_library_inside_a_watched_folder(self):
+        paper(self.src, "paper001")
+        watched = self.root / "Downloads"
+        watched.mkdir()
+        original = watched / "keep.pdf"
+        original.write_bytes(b"%PDF original")
+        write_json_atomic(self.src / ".folder-sync.json", {"": {"path": str(watched), "enabled": True}})
+        with self.assertRaisesRegex(ValueError, "重叠"):
+            self.migrate(target=watched)
+        self.assertEqual(original.read_bytes(), b"%PDF original")
+        self.assertEqual(list(watched.iterdir()), [original])
+        self.assertEqual(config.load()["library_dir"], str(self.src))
+
+    def test_failed_copy_rolls_back_mapping_with_papers(self):
+        paper(self.src, "paper001")
+        write_json_atomic(self.src / ".folder-sync.json", {"A": {"path": str(self.root / "Downloads")}})
+        before = (self.src / ".folder-sync.json").read_bytes()
+        with patch("easyread.library.cloudlib.config.save", side_effect=OSError("config locked")):
+            with self.assertRaisesRegex(OSError, "config locked"):
+                self.migrate()
+        self.assertFalse((self.dst / ".folder-sync.json").exists())
+        self.assertFalse((self.dst / "paper001").exists())
+        self.assertEqual((self.src / ".folder-sync.json").read_bytes(), before)
+
+    def test_merge_keeps_target_mapping_without_merging_source_mapping(self):
+        paper(self.src, "paper001")
+        paper(self.dst, "paper002")
+        write_json_atomic(self.src / ".folder-sync.json", {"A": {}})
+        write_json_atomic(self.dst / ".folder-sync.json", {"B": {}})
+        before = (self.dst / ".folder-sync.json").read_bytes()
+        self.migrate("merge")
+        self.assertEqual((self.dst / ".folder-sync.json").read_bytes(), before)
 
     def fail_second_publication(self):
         rename = Path.rename

@@ -89,6 +89,7 @@
       titleFields(i) +
       '<div class="cats">' + cats + '<button class="catchip add" data-d="newcat">' + PR.icon("plus", "sm") + PR.t("新分类") + "</button>" +
       '<input id="catInput" class="catchip" placeholder="' + PR.t("分类名，回车确定") + '" maxlength="30" hidden></div>' +
+      (L.labelDetail ? L.labelDetail(i) : "") +
       '<div class="seg">' + status + "</div>" +
       '<div class="kv"><span>' + PR.t("作者") + '</span><span contenteditable="plaintext-only" data-meta="authors">' + PR.esc(i.authors) + "</span>" +
       '<span>' + PR.t("年份") + '</span><span contenteditable="plaintext-only" data-meta="year">' + PR.esc(i.year) + "</span>" +
@@ -178,17 +179,19 @@
     PR.toast(PR.t("已开始重新翻译")); L.load();
   }
 
-  PR.rowMenu = function (id, where) {
+  PR.rowMenu = function (id, where, folder) {
     const i = L.byId(id);
     const setStatus = (s) => () => L.patch(id, { status: s });
     PR.menu(where, [
       { label: PR.t("打开阅读"), icon: "book", kbd: "Enter", fn: () => L.openReader(id) },
       { label: (i.source_type === "web" ? PR.t("打开原网页") : PR.t("打开原 PDF")), icon: "pdf", fn: () => window.open("/p/" + id + (i.source_type === "web" ? "/source.html" : "/source.pdf")) },
       "-",
+      ...(L.folderMenuItems ? L.folderMenuItems(i, where, folder) : []),
       { label: i.starred ? PR.t("取消星标") : PR.t("加星标"), icon: "star", kbd: "S", fn: () => L.patch(id, { starred: !i.starred }) },
       { label: L.side.pinned.includes("p:" + id) ? PR.t("取消置顶") : PR.t("置顶到侧栏"), icon: "pin", fn: () => L.togglePin("p:" + id) },
       "-",
       ...L.catMenuItems(id),
+      ...(L.labelMenuItems ? L.labelMenuItems(i) : []),
       { label: PR.t("标为未读"), fn: setStatus("unread") }, { label: PR.t("标为在读"), fn: setStatus("reading") }, { label: PR.t("标为已读"), fn: setStatus("done") },
       "-",
       { label: PR.t("复制 BibTeX"), icon: "copy", fn: () => copy(PR.cite(i, "bibtex"), " BibTeX") },

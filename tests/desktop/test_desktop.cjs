@@ -5,13 +5,14 @@ const vm = require("node:vm");
 const { EventEmitter } = require("node:events");
 const { test } = require("node:test");
 
-async function desktop(platform = "darwin", lock = true, ready = true, argv = [], appDataBroken = false) {
+async function desktop(platform = "darwin", lock = true, ready = true, argv = [], appDataBroken = false, desktopPreview = null) {
   const app = new EventEmitter();
   Object.assign(app, {
     setPath(name, value) { this.paths = { ...this.paths, [name]: value }; },
-    getPath(name) { if (appDataBroken && name === "appData") throw new Error("Failed to get 'appData' path"); return "/tmp"; }, getLocale: () => "zh-CN", isPackaged: true,
+    getPath(name) { if (appDataBroken && name === "appData") throw new Error("Failed to get 'appData' path"); return this.paths?.[name] || "/tmp"; }, getLocale: () => "zh-CN", isPackaged: true,
     requestSingleInstanceLock: () => lock, whenReady: () => Promise.resolve(), isReady: () => true,
     setAsDefaultProtocolClient(scheme) { this.protocol = scheme; },
+    setAppUserModelId(id) { this.appModelId = id; },
     quit() { this.quitCalled = true; this.emit("before-quit", { preventDefault() {} }); },
     relaunch() { this.relaunched = true; }, exit() { this.exited = true; },
   });
@@ -53,7 +54,8 @@ async function desktop(platform = "darwin", lock = true, ready = true, argv = []
     },
   };
   const proc = new EventEmitter();
-  Object.assign(proc, { platform, env: {}, resourcesPath: "/tmp/Resources", argv: ["EasyRead.exe", ...argv] });
+  const env = desktopPreview ? { EASYREAD_HOME: "/old/home", EASYREAD_LIBRARY: "/old/library", COREAD_LIBRARY: "/old/coread" } : {};
+  Object.assign(proc, { platform, env, resourcesPath: "/tmp/Resources", argv: ["EasyRead.exe", ...argv] });
   const fakeRequire = name => name === "electron" ? { app, BrowserWindow: Window, Menu, ipcMain, crashReporter: { start() {} }, dialog: { showErrorBox() {}, showMessageBox: async () => ({ response: 0 }), showOpenDialog: async () => ({ canceled: false, filePaths: ["/tmp/chosen"] }) }, shell: {} }
     : name === "child_process" ? childProcess : name === "fs" ? { existsSync: () => true }
     : name === "http" ? { request(url, options, callback) {
@@ -66,11 +68,12 @@ async function desktop(platform = "darwin", lock = true, ready = true, argv = []
       }); return req;
     } }
     : name === "./startup-feedback.cjs" ? { ...require("../../electron/startup-feedback.cjs"), mark(_app, stage) { stages.push(stage); }, loginShellPath: async () => "/usr/bin:/bin" }
-    : name === "./desktop-updates.cjs" ? { registerUpdates() {} }
+    : name === "../package.json" ? { desktopPreview }
+    : name === "./desktop-updates.cjs" ? { registerUpdates(options) { app.updatesEnabled = options.enabled; } }
     : name === "./desktop-exports.cjs" ? require("../../electron/desktop-exports.cjs")
     : name === "./desktop-tabs.cjs" ? require("../../electron/desktop-tabs.cjs")
     : name === "./deep-link.cjs" ? require("../../electron/deep-link.cjs")
-    : name === "./data-dir.cjs" ? { prepare: async () => null }
+    : name === "./data-dir.cjs" ? { prepare: async () => { app.legacyDataPrepared = true; return null; } }
     : name === "electron-updater" ? { autoUpdater: {} }
     : name === "./window-state.cjs" ? { options: () => ({ opts: { width: 1440, height: 960 }, maximized: false }), track() {} }
     : require(name);
@@ -85,6 +88,23 @@ test("startup survives a missing appData path instead of crashing the main proce
   const d = await desktop("win32", true, true, [], true);
   assert.ok(d.app.paths.userData.endsWith("EasyRead"));
   assert.equal(d.windows.length, 1);
+  d.app.quit();
+});
+
+test("the packaged preview ignores inherited library paths and skips official migration, links and updates", async () => {
+  const { extraMetadata } = require("../../installer/folder-sync-preview.cjs");
+  const preview = extraMetadata.desktopPreview;
+  const d = await desktop("win32", true, true, [], false, preview);
+  const env = d.launches[0].options.env;
+  assert.equal(d.app.paths.userData, path.join("/tmp", preview.profile));
+  assert.equal(d.app.appModelId, preview.appId);
+  assert.equal(env.EASYREAD_HOME, path.join(d.app.paths.userData, "data"));
+  assert.equal(env.EASYREAD_LIBRARY, undefined);
+  assert.equal(env.COREAD_LIBRARY, undefined);
+  assert.equal(env.EASYREAD_DESKTOP_PREVIEW, "1");
+  assert.equal(d.app.legacyDataPrepared, undefined);
+  assert.equal(d.app.protocol, undefined);
+  assert.equal(d.app.updatesEnabled, false);
   d.app.quit();
 });
 

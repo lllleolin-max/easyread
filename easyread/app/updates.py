@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -51,6 +52,8 @@ def check(force: bool = False) -> dict:
     failed：最近一次去问 GitHub 没问到（记在缓存里，没到重试时间也一直算失败）。latest 仍是上次问到的版本，页面不能据此说“已经是最新版”。
     """
     out = {"current": __version__, "latest": "", "newer": False, "enabled": bool(config.load().get("check_updates", True)), "failed": False}
+    if os.environ.get("EASYREAD_DESKTOP_PREVIEW") == "1":
+        return {**out, "enabled": False, "preview": True}
     if not out["enabled"] and not force:
         return out
     with _lock:  # 两个页面同时打开只问一次

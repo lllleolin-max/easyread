@@ -104,9 +104,12 @@ JSON 里 TeX 的反斜杠要写两个（`\\frac`）。`\f` `\b` `\t` `\n` `\r` �
 ## item.json（只读）
 
 ```json
-{ "added": "…", "tags": ["统计"], "status": "unread | reading | done", "starred": false,
+{ "added": "…", "tags": ["统计"], "labels": ["队列研究", "预注册"], "status": "unread | reading | done", "starred": false,
   "last_opened": "…", "meta_override": { "title_zh": "…" } }
 ```
+
+`tags` 保存原有分类路径。`labels` 保存论文的多个标签名，旧条目缺少该字段时视为未设置标签。
+`translation_labels_done: true` 表示该论文已完成随翻译运行的标签判断。后续的选页、重译和续跑会读取该标记。两个 AI 标签开关都关闭时会跳过判断，不写标记。开关保存在界面偏好的 `library.ai_label_match` 和 `library.ai_label_create`，缺省均为 `false`。
 
 ## job.json（后台任务状态）
 
@@ -146,6 +149,16 @@ JSON 里 TeX 的反斜杠要写两个（`\\frac`）。`\f` `\b` `\t` `\n` `\r` �
 | `config.json` | 设置：翻译引擎、各家 API Key（`openai.keys`，按服务商分开存）、问 AI 的模型名单和默认模型（`chat.models`、`chat.default`） |
 | `prefs.json` | 界面偏好：阅读页字号、版心、主题、划线笔（`reader`），功能开关和快捷键总开关（`ui`），改过的键位（`keys`） |
 | `easyread.log` | 服务日志，设置底部“查看运行日志”能看到 |
+| `library/.paper-labels.json` | 全库共享的标签定义。以标签名为键，值为匹配规则文本，空字符串表示按名称匹配。旧版的名称数组可直接读取。复制文献库时复制定义，合并库时已应用的标签名随论文复制。 |
+| `library/.folder-sync.json` | 本地文件夹映射、自动导入和翻译选项、联网元数据选项、子目录、PDF 相对路径、文件状态、论文 ID 和需要跳过自动翻译的存量文件。相同内容沿用同一个论文 ID。 |
+
+`.folder-sync.json` 以映射名为键，空字符串键表示“全部”的默认文件夹。关闭默认映射时保留路径和选项，停止扫描这个目录。
+
+每个映射的 `backlog` 记录尚待处理且只入库的相对路径，跨扫描和重启保留，处理完成后移出。同名替换和新增文件一起计入每次扫描的批量翻译上限。链接原文使用 `paper.json` 里保存的 `source_sha256` 核对内容，映射中已登记的同一论文副本也按完整摘要核对。
+
+读取时校验映射结构、布尔选项和文件记录。无法读取时保留原文件并停止同步，禁止用默认值覆盖；其他文献库功能仍可使用。复制文献库时一并保留该文件，使用或合并已有库时沿用目标库的文件。
+
+映射文件夹导入论文时，会在新论文的 `item.json` 中记下 `network_metadata`，原页准备或重试会按这个选项决定是否联网补充书目。以前的论文没有该字段时沿用原有的元数据行为。
 
 ## 图：裁图和图内文字
 

@@ -10,6 +10,7 @@ import urllib.request
 from contextlib import nullcontext
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 from pypdf import PdfWriter
 
@@ -98,6 +99,26 @@ class LinkedPDFTest(unittest.TestCase):
         self.assertEqual(ws.paper_path.read_bytes(), before)
         self.assertTrue((ws.root / "source.pdf").exists())
 
+    def test_automatic_relink_respects_a_newer_choice(self):
+        ws = self.linked()
+        selected, automatic = self.root / "selected.pdf", self.root / "automatic.pdf"
+        selected.write_bytes(self.data)
+        automatic.write_bytes(self.data)
+        self.lib.convert_pdf_to_link(ws.id, selected)
+        self.lib.convert_pdf_to_link(ws.id, automatic, expected_link=self.pdf)
+        self.assertEqual(ws.source_pdf, selected)
+
+    def test_only_the_workspaces_own_legacy_copy_can_open_without_a_saved_digest(self):
+        ws = self.linked()
+        ws.update("paper", lambda p: p["meta"].pop("source_sha256"))
+        with self.assertRaises(ValueError):
+            ws.read_source_pdf()
+        stored = ws.root / "source.pdf"
+        stored.write_bytes(self.data)
+        ws.update("paper", lambda p: p["meta"].update(source_pdf_path=str(stored)))
+        self.assertEqual(ws.source_pdf, stored)
+        self.assertEqual(ws.read_source_pdf(), self.data)
+
     def test_render_extract_engine_image_and_figure_use_link(self):
         ws = self.linked()
         pages = pdfwork.prepare(ws.root)
@@ -176,11 +197,25 @@ class LinkedPDFTest(unittest.TestCase):
             self.assertEqual(response.read(), self.data)
             self.assertEqual(response.headers["Content-Type"], "application/pdf")
         self.assertIsNone(_safe(ws.root, "../../original.pdf"))
+        # The file can change after the path is selected but before HTTP reads its bytes.
+        read_bytes = Path.read_bytes
+
+        def replace_before_read(path):
+            if path == self.pdf:
+                path.write_bytes(self.data + b"another edition")
+            return read_bytes(path)
+        with patch.object(Path, "read_bytes", replace_before_read):
+            with self.assertRaises(urllib.error.HTTPError) as changed:
+                urllib.request.urlopen(url)
+        with changed.exception as response:
+            self.assertEqual(response.code, 409)
+            self.assertIn(str(self.pdf), json.loads(response.read())["error"])
         self.pdf.unlink()
         with self.assertRaises(urllib.error.HTTPError) as error:
             urllib.request.urlopen(url)
-        self.assertEqual(error.exception.code, 409)
-        self.assertIn(str(self.pdf), json.loads(error.exception.read())["error"])
+        with error.exception as response:
+            self.assertEqual(response.code, 409)
+            self.assertIn(str(self.pdf), json.loads(response.read())["error"])
 
     def test_model_metadata_cannot_change_pdf_source(self):
         for link in (False, True):

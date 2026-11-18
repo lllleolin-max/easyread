@@ -72,6 +72,14 @@ class UpdatesTest(unittest.TestCase):
             updates.check(force=True)  # 手动检查照样问
         self.assertEqual(self.calls, 1)
 
+    def test_preview_cannot_fetch_official_updates(self):
+        with mock.patch.dict("os.environ", {"EASYREAD_DESKTOP_PREVIEW": "1"}), self.fake():
+            result = updates.check(force=True)
+        self.assertTrue(result["preview"])
+        self.assertFalse(result["enabled"])
+        self.assertFalse(result["newer"])
+        self.assertEqual(self.calls, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

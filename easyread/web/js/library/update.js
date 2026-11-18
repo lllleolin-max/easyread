@@ -157,6 +157,7 @@
   // bad：这次没查成（没连上 GitHub 或接口报错），圆点和小字都标红，不能看着像“已经是最新版”
   function panelInner(msg, bad) {
     const u = PR.update, newer = !!(u && u.newer);
+    if (u && u.preview) return '<b>' + PR.t("文件夹同步试用版 {v}", { v: PR.esc(u.current) }) + '</b>';
     bad = bad || (!msg && !newer && !!(u && u.failed));
     const line = msg || (bad ? PR.t("没连上 GitHub，稍后再试") : newer ? PR.t("新版本 {v} 可以更新", { v: PR.esc(u.latest) }) : u && u.latest ? PR.t("已经是最新版") : "");
     return '<div class="hu-row"><span class="hu-dot' + (bad ? " fail" : newer ? " new" : "") + '"></span><div class="hu-text"><b>' + PR.t("版本 {v}", { v: PR.esc(PR.lib.version || "") }) +

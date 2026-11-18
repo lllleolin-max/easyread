@@ -12,6 +12,7 @@ const { registerExports } = require("./desktop-exports.cjs");
 const deepLink = require("./deep-link.cjs");
 const desktopTabs = require("./desktop-tabs.cjs");
 const dataDir = require("./data-dir.cjs");
+const preview = app.isPackaged && require("../package.json").desktopPreview;
 
 // 窗口缓存等放 %APPDATA%\EasyRead（默认会用 package.json 的 name，叫 easyread-desktop）。
 // 论文和设置不放这里：Windows 安装版放 <安装目录>\data（见 data-dir.cjs），其余平台用 ~/EasyRead。
@@ -27,7 +28,8 @@ function appDataDir() {
     return process.env.XDG_CONFIG_HOME || path.join(home, ".config");
   }
 }
-app.setPath("userData", path.join(appDataDir(), "EasyRead"));
+app.setPath("userData", path.join(appDataDir(), preview ? preview.profile : "EasyRead"));
+if (preview) app.setAppUserModelId(preview.appId);
 startup.mark(app, "electron-entry");
 
 // 桌面版自己的几句报错跟系统语言走（界面语言由后端决定，见 easyread/app/i18n.py）
@@ -79,8 +81,13 @@ function startBackend() {
   const shellPath = await startup.loginShellPath(process.platform);
   startup.mark(app, "shell-path-ready");
   if (quitting) throw new Error(isZh() ? "启动已取消" : "Startup cancelled");
-  const home = await dataDir.prepare(app, line => startup.mark(app, line));
+  const home = preview ? path.join(app.getPath("userData"), "data") : await dataDir.prepare(app, line => startup.mark(app, line));
   if (home) env.EASYREAD_HOME = home;
+  if (preview) {
+    delete env.EASYREAD_LIBRARY;
+    delete env.COREAD_LIBRARY;
+    env.EASYREAD_DESKTOP_PREVIEW = "1";
+  }
   if (shellPath) {
     env.PATH = [...new Set([...shellPath.split(":"), ...(env.PATH || "").split(":")].filter(Boolean))].join(":");
   }
@@ -256,11 +263,17 @@ async function createWindow() {
     minHeight: 680,
     icon: path.join(__dirname, "assets", "icon.ico"),
     show: false,
+    ...(preview ? { title: preview.title } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
     },
+  });
+  if (preview) mainWindow.on("page-title-updated", (event, title) => {
+    event.preventDefault();
+    const documentTitle = title.replace(/(?: · )?EasyRead$/, "");
+    mainWindow.setTitle(documentTitle ? `${documentTitle} · ${preview.title}` : preview.title);
   });
   mainWindow.webContents.setWindowOpenHandler(({ url: target }) => {
     if (/^https?:/i.test(target)) shell.openExternal(target);
@@ -367,9 +380,9 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(() => {
     registerExports({ app, ipcMain, dialog, getWindow: () => mainWindow, trustedWindow });
-    deepLink.register(app, process);
+    if (!preview) deepLink.register(app, process);
     registerUpdates({
-      app, ipcMain, updater: require("electron-updater").autoUpdater, trustedWindow,
+      app, ipcMain, updater: preview ? null : require("electron-updater").autoUpdater, enabled: !preview, trustedWindow,
       getWindow: () => mainWindow,
       prepareInstall: async () => { await savePageState(); await stopBackendGracefully(); },
       recover: async () => {

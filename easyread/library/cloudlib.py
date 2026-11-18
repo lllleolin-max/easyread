@@ -14,6 +14,7 @@ from ..app import config
 from .cloudlib_detect import detect, target_path  # noqa: F401
 from ..app.i18n import tr
 from ..app.log import log
+from .paper_labels import CATALOG
 from .store import read_json, write_json_atomic
 
 MIGRATION_MARKER = ".easyread-migration.json"
@@ -222,6 +223,22 @@ def move(src: str | Path, dst: str | Path, mode: str) -> dict:
                 result["skipped"].append({"id": str(target), "reason": tr("目标已有同名文件夹，已保留目标内容")})
             else:
                 entries.append((p, target))
+    labels = src / CATALOG
+    if mode == "copy" and (labels.exists() or labels.is_symlink()):
+        entries.append((labels, Path(CATALOG)))
+    # A copied library keeps its mappings. Merge/use keep the target's settings.
+    mappings = src / ".folder-sync.json"
+    if mode == "copy" and (mappings.exists() or mappings.is_symlink()):
+        if _linked(mappings):
+            raise ValueError(tr("文献库中有符号链接或目录联接，请改用普通文件夹：{path}", path=str(mappings)))
+        target = dst / mappings.name
+        if target.exists() or target.is_symlink():
+            raise ValueError(tr("目标中已有同名文件或文件夹，不会覆盖：{name}", name=mappings.name))
+        for watch in (read_json(mappings, {}) or {}).values():
+            watched = Path(watch["path"]).resolve()
+            if dst.is_relative_to(watched) or watched.is_relative_to(dst):
+                raise ValueError(tr("这个文件夹与文献库或已有的监控文件夹重叠"))
+        entries.append((mappings, Path(mappings.name)))
     dst.mkdir(parents=True, exist_ok=True)
     staging = dst / f"{STAGING_PREFIX}{uuid.uuid4().hex}"
     staging.mkdir()  # 不用 mkdtemp：同样会在没权限时无限重试
@@ -270,7 +287,7 @@ def move(src: str | Path, dst: str | Path, mode: str) -> dict:
                     shutil.copyfileobj(source, output)
                 if target.stat().st_size != staged.stat().st_size:
                     raise ValueError(tr("复制核对失败，文献库位置没有更改"))
-            if relative.parts[0] != ".trash":
+            if not relative.parts[0].startswith("."):
                 result["copied"] += 1
         transaction["state"] = "ready"
         write_json_atomic(marker, transaction)

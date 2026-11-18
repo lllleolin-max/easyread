@@ -10,7 +10,8 @@
     "start": "electron .",
     "build:editor": "node scripts/build_note_editor.cjs",
     "build:backend": "python scripts/build_backend.py",
-    "dist": "npm run build:editor && npm run build:backend && electron-builder --publish never"
+    "dist": "npm run build:editor && npm run build:backend && electron-builder --publish never",
+    "dist:folder-sync-preview": "npm run build:editor && npm run build:backend && electron-builder --win nsis --x64 --publish never --config installer/folder-sync-preview.cjs"
   },
   "devDependencies": {
     "@floating-ui/react": "^0.27.20",
